@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EasyPark",
+        "description": "Připojení k Agentovi na companion telefonu (LAN API), kde je nainstalovaná a přihlášená aplikace EasyPark.",
+        "data": {
+          "host": "IP adresa telefonu",
+          "port": "Port Agenta",
+          "token": "Token Agenta",
+          "zone": "Kód parkovací zóny",
+          "plates": "SPZ",
+          "max_price": "Maximální cena jednoho nákupu (Kč)",
+          "return_package": "Aplikace, na kterou se potom vrátit"
+        },
+        "data_description": {
+          "host": "Pevná IP adresa companion telefonu (např. rezervace v DHCP).",
+          "token": "Najdeš v aplikaci VAG Companion Agent (Copy token).",
+          "zone": "Například P4-1925. Vyhledá se v EasyParku.",
+          "plates": "Oddělené čárkou; každá SPZ musí být v EasyParku jako vozidlo.",
+          "max_price": "Nákup, jehož celková cena na obrazovce Confirm parking je vyšší, se nespustí.",
+          "return_package": "Android balíček, který se po každém nákupu přepne do popředí. Prázdné = zůstat v EasyParku."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Agent na této adrese s tímto tokenem neodpovídá.",
+      "easypark_missing": "Aplikace EasyPark není na telefonu nainstalovaná.",
+      "no_plates": "Zadej alespoň jednu SPZ."
+    },
+    "abort": {
+      "already_configured": "Tento telefon a zóna už jsou nastavené."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EasyPark",
+        "data": {
+          "host": "IP adresa telefonu",
+          "port": "Port Agenta",
+          "token": "Token Agenta",
+          "zone": "Kód parkovací zóny",
+          "plates": "SPZ",
+          "max_price": "Maximální cena jednoho nákupu (Kč)",
+          "return_package": "Aplikace, na kterou se potom vrátit"
+        },
+        "data_description": {
+          "host": "Pevná IP adresa companion telefonu (např. rezervace v DHCP).",
+          "token": "Najdeš v aplikaci VAG Companion Agent (Copy token).",
+          "zone": "Například P4-1925. Vyhledá se v EasyParku.",
+          "plates": "Oddělené čárkou; každá SPZ musí být v EasyParku jako vozidlo.",
+          "max_price": "Nákup, jehož celková cena na obrazovce Confirm parking je vyšší, se nespustí.",
+          "return_package": "Android balíček, který se po každém nákupu přepne do popředí. Prázdné = zůstat v EasyParku."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Agent na této adrese s tímto tokenem neodpovídá.",
+      "easypark_missing": "Aplikace EasyPark není na telefonu nainstalovaná.",
+      "no_plates": "Zadej alespoň jednu SPZ."
+    }
+  },
+  "entity": {
+    "button": {
+      "buy": {
+        "name": "Koupit parkování"
+      },
+      "stop": {
+        "name": "Ukončit parkování"
+      }
+    },
+    "number": {
+      "hourly_rate": {
+        "name": "Cena za hodinu"
+      },
+      "duration": {
+        "name": "Délka parkování"
+      }
+    },
+    "select": {
+      "vehicle": {
+        "name": "Vozidlo"
+      }
+    },
+    "switch": {
+      "dry_run": {
+        "name": "Zkušební režim"
+      }
+    },
+    "binary_sensor": {
+      "active": {
+        "name": "Parkování běží"
+      }
+    },
+    "sensor": {
+      "cost_so_far": {
+        "name": "Zatím zaplaceno"
+      },
+      "quoted_total": {
+        "name": "Cena dle EasyParku"
+      },
+      "started": {
+        "name": "Začátek parkování"
+      },
+      "ends": {
+        "name": "Konec parkování"
+      },
+      "zone": {
+        "name": "Zóna"
+      },
+      "last_result": {
+        "name": "Poslední výsledek"
+      }
+    }
+  }
+}

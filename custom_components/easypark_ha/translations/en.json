@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EasyPark",
+        "description": "Connect to the companion phone Agent (LAN API) on which the EasyPark app is installed and signed in.",
+        "data": {
+          "host": "Phone IP address",
+          "port": "Agent port",
+          "token": "Agent token",
+          "zone": "Parking zone code",
+          "plates": "License plates",
+          "max_price": "Maximum price per purchase (CZK)",
+          "return_package": "App to return to afterwards"
+        },
+        "data_description": {
+          "host": "Fixed IP address of the companion phone (e.g. a DHCP reservation).",
+          "token": "Shown in the VAG Companion Agent app (Copy token).",
+          "zone": "For example P4-1925. It is searched in EasyPark.",
+          "plates": "Comma-separated; every plate must exist as a vehicle in EasyPark.",
+          "max_price": "A purchase whose total on the Confirm parking screen is higher is not started.",
+          "return_package": "Android package brought to the front after each purchase. Leave empty to stay in EasyPark."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Agent with this address and token.",
+      "easypark_missing": "The EasyPark app is not installed on the phone.",
+      "no_plates": "Enter at least one license plate."
+    },
+    "abort": {
+      "already_configured": "This phone and zone are already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EasyPark",
+        "data": {
+          "host": "Phone IP address",
+          "port": "Agent port",
+          "token": "Agent token",
+          "zone": "Parking zone code",
+          "plates": "License plates",
+          "max_price": "Maximum price per purchase (CZK)",
+          "return_package": "App to return to afterwards"
+        },
+        "data_description": {
+          "host": "Fixed IP address of the companion phone (e.g. a DHCP reservation).",
+          "token": "Shown in the VAG Companion Agent app (Copy token).",
+          "zone": "For example P4-1925. It is searched in EasyPark.",
+          "plates": "Comma-separated; every plate must exist as a vehicle in EasyPark.",
+          "max_price": "A purchase whose total on the Confirm parking screen is higher is not started.",
+          "return_package": "Android package brought to the front after each purchase. Leave empty to stay in EasyPark."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Agent with this address and token.",
+      "easypark_missing": "The EasyPark app is not installed on the phone.",
+      "no_plates": "Enter at least one license plate."
+    }
+  },
+  "entity": {
+    "button": {
+      "buy": {
+        "name": "Buy parking"
+      },
+      "stop": {
+        "name": "End parking"
+      }
+    },
+    "number": {
+      "hourly_rate": {
+        "name": "Hourly rate"
+      },
+      "duration": {
+        "name": "Parking duration"
+      }
+    },
+    "select": {
+      "vehicle": {
+        "name": "Vehicle"
+      }
+    },
+    "switch": {
+      "dry_run": {
+        "name": "Test mode"
+      }
+    },
+    "binary_sensor": {
+      "active": {
+        "name": "Parking active"
+      }
+    },
+    "sensor": {
+      "cost_so_far": {
+        "name": "Cost so far"
+      },
+      "quoted_total": {
+        "name": "Quoted total"
+      },
+      "started": {
+        "name": "Parking started"
+      },
+      "ends": {
+        "name": "Parking ends"
+      },
+      "zone": {
+        "name": "Zone"
+      },
+      "last_result": {
+        "name": "Last result"
+      }
+    }
+  }
+}
