@@ -68,12 +68,12 @@
       },
       "stop": {
         "name": "Ukončit parkování"
+      },
+      "refresh": {
+        "name": "Načíst stav z EasyParku"
       }
     },
     "number": {
-      "hourly_rate": {
-        "name": "Cena za hodinu"
-      },
       "duration": {
         "name": "Délka parkování"
       }
@@ -94,11 +94,11 @@
       }
     },
     "sensor": {
-      "cost_so_far": {
-        "name": "Zatím zaplaceno"
+      "price": {
+        "name": "Cena (EasyPark)"
       },
-      "quoted_total": {
-        "name": "Cena dle EasyParku"
+      "service_fee": {
+        "name": "Servisní poplatek"
       },
       "started": {
         "name": "Začátek parkování"

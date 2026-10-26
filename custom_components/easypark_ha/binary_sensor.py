@@ -27,4 +27,8 @@ class ActiveSensor(EasyParkEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         session = self.manager.session or {}
-        return {"zone": session.get("zone"), "plate": session.get("plate")}
+        return {
+            "zone": session.get("zone"),
+            "plate": session.get("plate"),
+            "end_adjusted_by_easypark": session.get("adjusted"),
+        }

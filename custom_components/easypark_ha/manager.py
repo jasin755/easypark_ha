@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -20,15 +20,25 @@ from .const import (
     CONF_RETURN_PACKAGE,
     CONF_ZONE,
     DEFAULT_DURATION_MIN,
-    DEFAULT_HOURLY_RATE,
     DOMAIN,
     STORAGE_VERSION,
 )
-from .driver import AppInterruptedError, DriverError, EasyParkDriver
+from .driver import (
+    ActiveSession,
+    AlreadyActiveError,
+    AppInterruptedError,
+    DriverError,
+    EasyParkDriver,
+    NoActiveParkingError,
+    StopResult,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-RETRY_DELAY_S = 30
+# Another app on the phone (typically the car integration's poll) took the
+# foreground before anything was paid or stopped: wait and try again.
+RETRY_DELAY_S = 15
+RETRY_ATTEMPTS = 3
 
 
 def parse_plates(value: str | list[str]) -> list[str]:
@@ -52,10 +62,12 @@ class ParkingManager:
         self.return_package: str = options.get(CONF_RETURN_PACKAGE, "")
 
         self.plate: str = self.plates[0]
-        self.hourly_rate: float = DEFAULT_HOURLY_RATE
         self.duration_min: int = DEFAULT_DURATION_MIN
         self.dry_run: bool = True
         self.session: dict[str, Any] | None = None
+        # The price EasyPark shows, incl. service fee: the quote on Confirm
+        # parking, then the running session, then the final summary.
+        self.price: dict[str, Any] = {}
         self.last_result: str = "idle"
         self.last_details: dict[str, Any] = {}
 
@@ -63,12 +75,12 @@ class ParkingManager:
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
-        self.hourly_rate = float(data.get("hourly_rate", self.hourly_rate))
         self.duration_min = int(data.get("duration_min", self.duration_min))
         self.dry_run = bool(data.get("dry_run", self.dry_run))
         if data.get("plate") in self.plates:
             self.plate = data["plate"]
         self.session = data.get("session")
+        self.price = data.get("price") or {}
         self._unsub_tick = async_track_time_interval(
             self.hass, self._tick, timedelta(minutes=1)
         )
@@ -81,11 +93,11 @@ class ParkingManager:
     def _save(self) -> None:
         self._store.async_delay_save(
             lambda: {
-                "hourly_rate": self.hourly_rate,
                 "duration_min": self.duration_min,
                 "dry_run": self.dry_run,
                 "plate": self.plate,
                 "session": self.session,
+                "price": self.price,
             },
             1,
         )
@@ -105,11 +117,6 @@ class ParkingManager:
         self._notify()
 
     # -- settings -------------------------------------------------------------
-
-    def set_hourly_rate(self, value: float) -> None:
-        self.hourly_rate = value
-        self._save()
-        self._notify()
 
     def set_duration(self, minutes: int) -> None:
         self.duration_min = minutes
@@ -150,78 +157,159 @@ class ParkingManager:
         ends = self.ends
         return ends is not None and dt_util.now() < ends
 
-    def cost_so_far(self) -> float | None:
-        started, ends = self.started, self.ends
-        if started is None or ends is None:
-            return None
-        until = min(dt_util.now(), ends)
-        hours = max((until - started).total_seconds(), 0) / 3600
-        return round(hours * float(self.session.get("hourly_rate", self.hourly_rate)), 2)
+    def _set_price(self, total: float | None, fee: float | None, source: str) -> None:
+        if total is None:
+            return
+        self.price = {"total": total, "service_fee": fee, "source": source, "read_at": dt_util.now().isoformat()}
 
     # -- actions --------------------------------------------------------------
 
-    async def async_buy(self) -> None:
+    def _session_from_app(self, active: ActiveSession, now: datetime, started: datetime | None) -> dict[str, Any]:
+        ends = active.ends_at(now)
+        return {
+            "zone": active.zone,
+            "plate": active.plate,
+            "started": started.isoformat() if started else None,
+            "ends": ends.isoformat() if ends else None,
+            "adjusted": active.adjusted,
+        }
+
+    async def _run(self, label: str, operation: Callable[[], Awaitable[None]]) -> None:
+        """One phone operation at a time; always hand the phone back afterwards."""
         if self._lock.locked():
-            raise HomeAssistantError("A parking purchase is already running")
-        async with self._lock:
-            self.last_result = "running"
+            raise HomeAssistantError("Another EasyPark operation is running")
+        try:
+            async with self._lock:
+                self.last_result = label
+                self._notify()
+                try:
+                    await operation()
+                except (DriverError, AgentError) as err:
+                    self.last_result = f"error: {err}"[:255]
+                    _LOGGER.warning("EasyPark %s failed: %s", label, err)
+                    raise HomeAssistantError(f"EasyPark: {err}") from err
+                finally:
+                    await self._return_to_previous_app()
+                    self._save()
+        finally:
+            # After the lock is released, so the buttons see the new state.
             self._notify()
+
+    async def _retrying(self, label: str, call: Callable[[], Awaitable[Any]]) -> Any:
+        """Run ``call``; while another app holds the phone, wait and retry.
+
+        The driver raises AppInterruptedError only before anything was paid or
+        stopped, so repeating the whole call is safe.
+        """
+        for attempt in range(1, RETRY_ATTEMPTS + 2):
+            try:
+                return await call()
+            except AppInterruptedError as err:
+                if attempt > RETRY_ATTEMPTS:
+                    raise
+                _LOGGER.info("EasyPark %s interrupted (%s); retry %d/%d in %ds",
+                             label, err, attempt, RETRY_ATTEMPTS, RETRY_DELAY_S)
+                self.last_result = f"{label}: phone busy, retry {attempt}/{RETRY_ATTEMPTS}"
+                self._notify()
+                await asyncio.sleep(RETRY_DELAY_S)
+        raise AssertionError("unreachable")
+
+    async def async_buy(self) -> None:
+        await self._run("buying", self._buy)
+
+    async def _buy(self) -> None:
+        dry_run = self.dry_run
+        now = dt_util.now()
+
+        async def buy_once() -> Any:
+            nonlocal now
+            # Each attempt starts from the current time, so the duration stays right.
             now = dt_util.now()
             end = (now + timedelta(minutes=self.duration_min)).replace(second=0, microsecond=0)
-            dry_run = self.dry_run
-            try:
-                try:
-                    result = await self._driver.buy(
-                        zone=self.zone, plate=self.plate, end=end, now=now,
-                        dry_run=dry_run, max_price=self.max_price,
-                    )
-                except AppInterruptedError as err:
-                    # Typically the car integration's poll; it is done within seconds.
-                    _LOGGER.info("EasyPark purchase interrupted (%s), retrying once", err)
-                    await asyncio.sleep(RETRY_DELAY_S)
-                    result = await self._driver.buy(
-                        zone=self.zone, plate=self.plate, end=end, now=now,
-                        dry_run=dry_run, max_price=self.max_price,
-                    )
-            except (DriverError, AgentError) as err:
-                self.last_result = f"error: {err}"
-                self.last_details = {}
-                _LOGGER.warning("EasyPark purchase failed: %s", err)
-                raise HomeAssistantError(f"EasyPark: {err}") from err
-            finally:
-                await self._return_to_previous_app()
-                self._notify()
+            return await self._driver.buy(
+                zone=self.zone, plate=self.plate, end=end, now=now, dry_run=dry_run, max_price=self.max_price
+            )
 
-            quote = result.quote
-            self.last_details = {
-                "zone": quote.zone,
-                "plate": quote.plate,
-                "ends": quote.ends.isoformat(),
-                "total": quote.total,
-                "service_fee": quote.service_fee,
-                "duration": quote.duration_text,
-                "zone_info": quote.zone_info,
-                "dry_run": dry_run,
-                "after_start_texts": result.after_start_texts[:20],
-            }
-            if result.started:
-                self.session = {
-                    "zone": quote.zone,
-                    "plate": quote.plate,
-                    "started": now.isoformat(),
-                    "ends": quote.ends.isoformat(),
-                    "total": quote.total,
-                    "service_fee": quote.service_fee,
-                    "hourly_rate": self.hourly_rate,
-                }
-                self.last_result = "started"
-            else:
-                self.last_result = "dry_run_ok"
-            self._save()
-            self._notify()
+        try:
+            result = await self._retrying("buying", buy_once)
+        except AlreadyActiveError as err:
+            self.session = self._session_from_app(err.session, now, None)
+            self._set_price(err.session.price, err.session.service_fee, "running")
+            raise
+
+        quote = result.quote
+        self.last_details = {
+            "zone": quote.zone,
+            "plate": quote.plate,
+            "requested_end": quote.ends.isoformat(),
+            "total": quote.total,
+            "service_fee": quote.service_fee,
+            "duration": quote.duration_text,
+            "zone_info": quote.zone_info,
+            "dry_run": dry_run,
+            "notes": result.after_start_texts,
+        }
+        if dry_run:
+            self.last_result = "dry_run_ok"
+            return
+        if result.session is None:
+            # Start Parking was tapped but the app shows no running parking.
+            # Never retried: it may still have been bought.
+            raise DriverError(
+                "Start Parking was tapped but EasyPark shows no running parking; check the app "
+                + "; ".join(result.after_start_texts)
+            )
+        self.session = self._session_from_app(result.session, now, now)
+        self._set_price(quote.total, quote.service_fee, "quote")
+        self._set_price(result.session.price, result.session.service_fee, "running")
+        self.last_details["ends"] = self.session["ends"]
+        self.last_result = "started"
 
     async def async_stop(self) -> None:
-        raise HomeAssistantError("Ending a parking session is not implemented yet")
+        await self._run("stopping", self._stop)
+
+    async def _stop(self) -> None:
+        plate = (self.session or {}).get("plate") or self.plate
+        attempts = 0
+
+        async def stop_once() -> StopResult:
+            nonlocal attempts
+            attempts += 1
+            try:
+                return await self._driver.stop(plate)
+            except NoActiveParkingError:
+                if attempts == 1:
+                    raise
+                # An interrupted earlier attempt got as far as stopping it.
+                return StopResult(plate=plate, total=None, duration_text="", period_text="")
+
+        result = await self._retrying("stopping", stop_once)
+        self.last_details = {
+            "plate": result.plate,
+            "total": result.total,
+            "service_fee": result.service_fee,
+            "duration": result.duration_text,
+            "period": result.period_text,
+        }
+        self._set_price(result.total, result.service_fee, "final")
+        self.session = None
+        self.last_result = "stopped"
+
+    async def async_refresh(self) -> None:
+        await self._run("reading", self._refresh)
+
+    async def _refresh(self) -> None:
+        plate = (self.session or {}).get("plate") or self.plate
+        active = await self._retrying("reading", lambda: self._driver.active_session(plate))
+        now = dt_util.now()
+        if active is None:
+            self.session = None
+            self.last_result = "no_active_parking"
+            return
+        started = self.started if self.session and self.session.get("plate") == active.plate else None
+        self.session = {**(self.session or {}), **self._session_from_app(active, now, started)}
+        self._set_price(active.price, active.service_fee, "running")
+        self.last_result = "active"
 
     async def _return_to_previous_app(self) -> None:
         if not self.return_package:

@@ -9,7 +9,6 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
-    SensorStateClass,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -31,23 +30,25 @@ def _session(m: ParkingManager, key: str) -> Any:
 
 SENSORS = (
     EasyParkSensorDescription(
-        key="cost_so_far",
+        key="price",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement="CZK",
-        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:cash",
-        value=lambda m: m.cost_so_far(),
+        value=lambda m: m.price.get("total"),
+        attributes=lambda m: {
+            "service_fee": m.price.get("service_fee"),
+            "source": m.price.get("source"),
+            "read_at": m.price.get("read_at"),
+        },
     ),
     EasyParkSensorDescription(
-        key="quoted_total",
+        key="service_fee",
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement="CZK",
-        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
-        icon="mdi:receipt-text",
-        value=lambda m: _session(m, "total"),
-        attributes=lambda m: {"service_fee": _session(m, "service_fee")},
+        icon="mdi:cash-plus",
+        value=lambda m: m.price.get("service_fee"),
     ),
     EasyParkSensorDescription(
         key="started",

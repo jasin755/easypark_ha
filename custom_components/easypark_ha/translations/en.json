@@ -68,12 +68,12 @@
       },
       "stop": {
         "name": "End parking"
+      },
+      "refresh": {
+        "name": "Read state from EasyPark"
       }
     },
     "number": {
-      "hourly_rate": {
-        "name": "Hourly rate"
-      },
       "duration": {
         "name": "Parking duration"
       }
@@ -94,11 +94,11 @@
       }
     },
     "sensor": {
-      "cost_so_far": {
-        "name": "Cost so far"
+      "price": {
+        "name": "Price (EasyPark)"
       },
-      "quoted_total": {
-        "name": "Quoted total"
+      "service_fee": {
+        "name": "Service fee"
       },
       "started": {
         "name": "Parking started"
