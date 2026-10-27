@@ -54,6 +54,9 @@ RID_STOP_SHEET = "StopConfirmationSheet"
 RID_SHEET_CONFIRM = "ConfirmationSheet_ConfirmButton"
 
 NOTIFICATIONS_PROMPT = "Allow notifications to get parking reminders"
+# Marketing sheets (e.g. the EasyPark Go trial) can pop up over any screen;
+# they are closed with their decline button, never accepted.
+OFFER_DECLINE = "Not now"
 _FEE = re.compile(r"(?:incl\.|including)\s+service fee\s+(.*)", re.IGNORECASE)
 _FAILURE = re.compile(r".*(could not|couldn't|failed|try again).*", re.IGNORECASE)
 
@@ -207,6 +210,8 @@ class EasyParkDriver:
             screen = await self._screen_or_empty()
             if screen.package == EASYPARK_PACKAGE and predicate(screen):
                 return screen
+            if screen.package == EASYPARK_PACKAGE and await self._decline_offer(screen):
+                continue
             if waited >= timeout_s:
                 if screen.package != EASYPARK_PACKAGE:
                     raise AppInterruptedError(f"{screen.package or 'no app'} is in the foreground while waiting for {what}")
@@ -227,6 +232,15 @@ class EasyParkDriver:
             raise DriverError(f"'{node.label}' is not clickable")
         await self._tap(screen, target)
 
+    async def _decline_offer(self, screen: Screen) -> bool:
+        """Close a marketing sheet with its "Not now" button. True if one was closed."""
+        node = screen.first_text(OFFER_DECLINE)
+        if node is None or screen.clickable_ancestor(node) is None:
+            return False
+        _LOGGER.info("Closing an EasyPark offer: %s", screen.all_texts()[:3])
+        await self._tap_clickable(screen, node)
+        return True
+
     # -- navigation -----------------------------------------------------------
 
     async def go_home(self) -> Screen:
@@ -242,6 +256,9 @@ class EasyParkDriver:
             screen = await self._screen_or_empty()
             if not screen.nodes:
                 await self._sleep(self._delay)
+                continue
+            # An offer sheet covers the map while its search button stays in the tree.
+            if await self._decline_offer(screen):
                 continue
             if screen.first_rid(RID_HOME_SEARCH) is not None:
                 return screen
@@ -321,7 +338,7 @@ class EasyParkDriver:
                 if error:
                     await self._close_error(screen)
                     return None, error
-                if await self._close_prompts(screen):
+                if await self._close_prompts(screen) or await self._decline_offer(screen):
                     continue
                 if self._is_session_screen(screen):
                     session = self._parse_session(screen)

@@ -253,6 +253,26 @@ async def test_cold_start_home_is_recognised():
     assert screen.first_rid("search_redesign_button") is not None
 
 
+OFFER = {("home_offer", "Not now"): "home"}
+
+
+async def test_offer_over_home_is_declined_before_buying():
+    # 2026-10-27: an EasyPark Go trial sheet covered the map; the search tap hit the sheet.
+    agent = FakeAgent(start="home_offer", transitions=OFFER)
+    result = await _buy(agent)
+    assert agent.taps[0] == "Not now"
+    assert "Start free 30-day trial" not in agent.taps
+    assert result.started is True
+
+
+async def test_offer_appearing_while_waiting_is_declined():
+    agent = FakeAgent(transitions={**OFFER, ("home", "search_redesign_button"): "home_offer",
+                                   ("home_offer", "Not now"): "search"})
+    result = await _buy(agent)
+    assert agent.taps[:3] == ["search_redesign_button", "Not now", "search_locations_search_bar"]
+    assert result.started is True
+
+
 class FlakyStopAgent(FakeAgent):
     """EasyPark answers the first ``failures`` stop confirmations with an error dialog."""
 
